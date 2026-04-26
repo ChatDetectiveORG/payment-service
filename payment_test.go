@@ -61,13 +61,13 @@ func TestBuildLevelPurchaseSuccessMessageEntities(t *testing.T) {
 		t.Fatalf("expected 3 entities, got %d", len(entities))
 	}
 
-	if entities[0].Type != tele.EntityBold || entities[0].Offset != 0 || entities[0].Length != 38 {
+	if entities[0].Type != tele.EntityBold || entities[0].Offset != 0 || entities[0].Length != 37 {
 		t.Fatalf("unexpected bold entity: %+v", entities[0])
 	}
-	if entities[1].Type != tele.EntityCustomEmoji || entities[1].Offset != 38 || entities[1].Length != 2 || entities[1].CustomEmojiID != "5463122435425448565" {
+	if entities[1].Type != tele.EntityCustomEmoji || entities[1].Offset != 37 || entities[1].Length != 2 || entities[1].CustomEmojiID != "5463122435425448565" {
 		t.Fatalf("unexpected custom emoji entity: %+v", entities[1])
 	}
-	if entities[2].Type != tele.EntityMention || entities[2].Offset != 142 || entities[2].Length != 25 {
+	if entities[2].Type != tele.EntityMention || entities[2].Offset != 141 || entities[2].Length != 25 {
 		t.Fatalf("unexpected mention entity: %+v", entities[2])
 	}
 }

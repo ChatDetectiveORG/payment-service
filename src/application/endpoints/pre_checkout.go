@@ -29,13 +29,13 @@ func NewPreCheckoutEndpoint() h.Endpoint {
 }
 
 func runPreCheckout(update tele.Update, hashe *h.HandlerChainHashe) *e.ErrorInfo {
-	return HandlePreCheckout(update)
+	return HandlePreCheckout(update, hashe.MirrorID())
 }
 
-func HandlePreCheckout(update tele.Update) *e.ErrorInfo {
+func HandlePreCheckout(update tele.Update, mirrorID string) *e.ErrorInfo {
 	query := update.PreCheckoutQuery
 	if query == nil {
 		return e.NewError("precheckout query is nil", "failed to handle precheckout").WithSeverity(e.Notice)
 	}
-	return paymentservice.ProcessPreCheckout(query.Payload, query.ID)
+	return paymentservice.ProcessPreCheckout(query.Payload, query.ID, mirrorID)
 }

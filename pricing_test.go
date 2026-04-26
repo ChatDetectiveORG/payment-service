@@ -22,6 +22,16 @@ func TestCalculateExportChatIsNotEnabledYet(t *testing.T) {
 	}
 }
 
+func TestCalculateMirrorPrice(t *testing.T) {
+	price, err := calculatePrice(PaymentTypeMirror, &PaymentOpts{Mirror: &MirrorOpts{PendingMirrorID: 42}})
+	if !err.IsNil() {
+		t.Fatalf("unexpected error: %s", err.JSON())
+	}
+	if price != 1 {
+		t.Fatalf("expected 1 star, got %d", price)
+	}
+}
+
 func TestCalculatePriceRejectsInvalidLevelCount(t *testing.T) {
 	_, err := calculatePrice(PaymentTypeLevelUp, &PaymentOpts{LevelUp: &LevelUpOpts{Levels: 0}})
 	if err.IsNil() {

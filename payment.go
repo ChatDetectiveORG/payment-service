@@ -3,6 +3,8 @@ package paymentservice
 import (
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	e "github.com/ChatDetectiveORG/shared/errors"
@@ -27,6 +29,10 @@ func EmitPayment(paymentType *PaymentType, opts *PaymentOpts) (*e.ErrorInfo, int
 	if err := validateInvoice(opts.Invoice); e.IsNonNil(err) {
 		return err, 0
 	}
+	if opts.MirrorID != "" {
+		sendInformationalMessage(opts.Recipient.ChatID, mirrorPaymentOnlyMainBotText, opts.MirrorID)
+		return e.NewError("payments are disabled for mirrors", "failed to emit payment").WithSeverity(e.Notice), 0
+	}
 
 	client, err := getClientByTelegramID(opts.Recipient.TelegramUserID)
 	if e.IsNonNil(err) {
@@ -39,7 +45,7 @@ func EmitPayment(paymentType *PaymentType, opts *PaymentOpts) (*e.ErrorInfo, int
 	}
 
 	if len(availablePaymentMethods) == 0 {
-		sendInformationalMessage(opts.Recipient.ChatID, defaultNoPaymentMethodsText)
+		sendInformationalMessage(opts.Recipient.ChatID, defaultNoPaymentMethodsText, "")
 		return e.NewError("payment methods are not configured", "failed to emit payment").WithSeverity(e.Notice), 0
 	}
 
@@ -52,7 +58,7 @@ func EmitPayment(paymentType *PaymentType, opts *PaymentOpts) (*e.ErrorInfo, int
 		return err, 0
 	}
 
-	if err := sendInvoice(opts.Recipient.ChatID, payload, amount, method, opts.Invoice); e.IsNonNil(err) {
+	if err := sendInvoice(opts.Recipient.ChatID, payload, amount, method, opts.Invoice, ""); e.IsNonNil(err) {
 		return err, payment.ID
 	}
 
@@ -60,6 +66,10 @@ func EmitPayment(paymentType *PaymentType, opts *PaymentOpts) (*e.ErrorInfo, int
 }
 
 func ApprovePreCheckout(paymentID int) *e.ErrorInfo {
+	return approvePreCheckout(paymentID, "")
+}
+
+func approvePreCheckout(paymentID int, mirrorID string) *e.ErrorInfo {
 	payment, err := getPaymentByID(paymentID)
 	if e.IsNonNil(err) {
 		return err
@@ -68,7 +78,7 @@ func ApprovePreCheckout(paymentID int) *e.ErrorInfo {
 		return e.NewError("precheckout id is empty", "failed to approve payment").WithSeverity(e.Notice)
 	}
 
-	bot, err := GetBot()
+	bot, err := GetBotByMirrorID(mirrorID)
 	if e.IsNonNil(err) {
 		return err
 	}
@@ -78,17 +88,27 @@ func ApprovePreCheckout(paymentID int) *e.ErrorInfo {
 	return markPaymentApproved(payment)
 }
 
-func ProcessPreCheckout(payload string, preCheckoutID string) *e.ErrorInfo {
+func ProcessPreCheckout(payload string, preCheckoutID string, mirrorID string) *e.ErrorInfo {
 	log.Printf("processing precheckout payload=%s id=%s", payload, preCheckoutID)
 	payment, err := markPreCheckoutReceived(payload, preCheckoutID)
 	if e.IsNonNil(err) {
 		return err
+	}
+	if mirrorID != "" {
+		_ = cancelPreCheckout(payment.ID, mirrorPaymentOnlyMainBotText, mirrorID)
+		return e.Nil()
 	}
 
 	var metadata *paymentServiceMetadata
 	switch PaymentType(payment.ServiceType) {
 	case PaymentTypeLevelUp:
 		metadata, err = grantLevelPurchase(payment, time.Now())
+		if e.IsNonNil(err) {
+			_ = CancelPreCheckout(payment.ID, defaultPreCheckoutCancelText)
+			return err
+		}
+	case PaymentTypeMirror:
+		metadata, err = grantMirrorPurchase(payment, time.Now())
 		if e.IsNonNil(err) {
 			_ = CancelPreCheckout(payment.ID, defaultPreCheckoutCancelText)
 			return err
@@ -106,11 +126,20 @@ func ProcessPreCheckout(payload string, preCheckoutID string) *e.ErrorInfo {
 			log.Printf("failed to send level purchase success message payment_id=%d: %s", payment.ID, err.JSON())
 		}
 	}
+	if metadata != nil && metadata.Mirror != nil {
+		if err := sendMirrorPurchaseSuccessMessage(payment, metadata); e.IsNonNil(err) {
+			log.Printf("failed to send mirror purchase success message payment_id=%d: %s", payment.ID, err.JSON())
+		}
+	}
 	log.Printf("approved precheckout payment_id=%d payload=%s", payment.ID, payload)
 	return e.Nil()
 }
 
 func CancelPreCheckout(paymentID int, userSideError string) *e.ErrorInfo {
+	return cancelPreCheckout(paymentID, userSideError, "")
+}
+
+func cancelPreCheckout(paymentID int, userSideError string, mirrorID string) *e.ErrorInfo {
 	payment, err := getPaymentByID(paymentID)
 	if e.IsNonNil(err) {
 		return err
@@ -122,7 +151,7 @@ func CancelPreCheckout(paymentID int, userSideError string) *e.ErrorInfo {
 		userSideError = defaultPreCheckoutCancelText
 	}
 
-	bot, err := GetBot()
+	bot, err := GetBotByMirrorID(mirrorID)
 	if e.IsNonNil(err) {
 		return err
 	}
@@ -161,8 +190,8 @@ func validateInvoice(opts *PaymentInvoiceOpts) *e.ErrorInfo {
 	return e.Nil()
 }
 
-func sendInvoice(chatID int64, payload string, amount int, method PaymentMethod, invoice *PaymentInvoiceOpts) *e.ErrorInfo {
-	bot, err := GetBot()
+func sendInvoice(chatID int64, payload string, amount int, method PaymentMethod, invoice *PaymentInvoiceOpts, mirrorID string) *e.ErrorInfo {
+	bot, err := GetBotByMirrorID(mirrorID)
 	if e.IsNonNil(err) {
 		return err
 	}
@@ -185,12 +214,45 @@ func sendInvoice(chatID int64, payload string, amount int, method PaymentMethod,
 	return e.Nil()
 }
 
-func sendInformationalMessage(chatID int64, text string) {
-	bot, err := GetBot()
+func sendInformationalMessage(chatID int64, text string, mirrorID string) {
+	bot, err := GetBotByMirrorID(mirrorID)
 	if e.IsNonNil(err) {
 		return
 	}
 	_, _ = bot.Send(&tele.Chat{ID: chatID}, text)
+}
+
+func sendMirrorPurchaseSuccessMessage(payment *models.Payment, metadata *paymentServiceMetadata) *e.ErrorInfo {
+	chatID, err := getPaymentChatID(payment, metadata)
+	if e.IsNonNil(err) {
+		return err
+	}
+	mirror, err := models.FindMirrorByID(GetDB(), metadata.Mirror.PendingMirrorID)
+	if e.IsNonNil(err) {
+		return err
+	}
+	token, err := mirror.DecryptToken(mirror.Owner)
+	if e.IsNonNil(err) {
+		return err
+	}
+	mirrorBot, rawErr := tele.NewBot(tele.Settings{Token: token, Poller: nil})
+	if rawErr != nil {
+		return e.FromError(rawErr, "failed to initialize mirror bot").WithSeverity(e.Notice)
+	}
+	if err := setMirrorWebhook(mirrorBot, mirror.Unique); e.IsNonNil(err) {
+		return err
+	}
+
+	text, entities := buildMirrorSuccessMessage(mirror.BotUsername)
+	bot, err := GetBot()
+	if e.IsNonNil(err) {
+		return err
+	}
+	_, rawErr = bot.Send(&tele.Chat{ID: chatID}, text, &tele.SendOptions{Entities: entities})
+	if rawErr != nil {
+		return e.FromError(rawErr, "failed to send mirror purchase success message").WithSeverity(e.Notice)
+	}
+	return e.Nil()
 }
 
 func sendLevelPurchaseSuccessMessage(payment *models.Payment, metadata *paymentServiceMetadata) *e.ErrorInfo {
@@ -242,4 +304,45 @@ func buildLevelPurchaseSuccessMessage(levels int) (string, tele.Entities) {
 		{Type: tele.EntityCustomEmoji, Offset: customEmojiOffset, Length: 2, CustomEmojiID: "5463122435425448565"},
 		{Type: tele.EntityMention, Offset: mentionOffset, Length: utils.TgLen(levelPurchaseBotMention)},
 	}
+}
+
+func buildMirrorSuccessMessage(botUsername string) (string, tele.Entities) {
+	botMention := "@" + botUsername
+	text := fmt.Sprintf(
+		"Зеркало успешно создано!👉\n\nОно функционирует точно так же, как и %s.\nЕсли он не будет использоваться больше месяца, то %s будет отключён от системы",
+		levelPurchaseBotMention,
+		botMention,
+	)
+	return text, tele.Entities{
+		{Offset: 24, Length: 2, Type: tele.EntityCustomEmoji, CustomEmojiID: "5463392464314315076"},
+		{Offset: 66, Length: utils.TgLen(levelPurchaseBotMention), Type: tele.EntityMention},
+	}
+}
+
+func setMirrorWebhook(bot *tele.Bot, unique string) *e.ErrorInfo {
+	if bot == nil {
+		return e.NewError("bot is nil", "failed to set mirror webhook").WithSeverity(e.Notice)
+	}
+	if err := bot.SetWebhook(&tele.Webhook{
+		Endpoint:       &tele.WebhookEndpoint{PublicURL: buildMirrorWebhookURL(unique)},
+		MaxConnections: 100,
+		AllowedUpdates: []string{
+			"message",
+			"callback_query",
+			"shipping_query",
+			"pre_checkout_query",
+			"business_connection",
+			"business_message",
+			"edited_business_message",
+			"deleted_business_messages",
+		},
+	}); err != nil {
+		return e.FromError(err, "failed to set mirror webhook").WithSeverity(e.Notice)
+	}
+	return e.Nil()
+}
+
+func buildMirrorWebhookURL(unique string) string {
+	base := strings.TrimRight(os.Getenv("TELEGRAM_BOT_PUBLIC_URL"), "/")
+	return base + "/mirror/" + unique
 }

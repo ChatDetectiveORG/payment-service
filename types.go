@@ -7,6 +7,7 @@ type PaymentType string
 const (
 	PaymentTypeLevelUp    PaymentType = "levelUp"
 	PaymentTypeExportChat PaymentType = "ExportChat"
+	PaymentTypeMirror     PaymentType = "Mirror"
 )
 
 type PaymentOpts struct {
@@ -14,6 +15,8 @@ type PaymentOpts struct {
 	Invoice    *PaymentInvoiceOpts
 	LevelUp    *LevelUpOpts
 	ExportChat *ExportChatOpts
+	Mirror     *MirrorOpts
+	MirrorID   string
 
 	// Timeout is treated as a deadline by EmitPayment.
 	Timeout *time.Time
@@ -36,6 +39,10 @@ type LevelUpOpts struct {
 
 type ExportChatOpts struct {
 	Messages int `json:"messages"`
+}
+
+type MirrorOpts struct {
+	PendingMirrorID int `json:"pending_mirror_id"`
 }
 
 type PaymentMethod struct {

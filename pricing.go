@@ -9,10 +9,12 @@ import (
 
 const (
 	levelUpPriceStars            = 1
+	mirrorPriceStars             = 1
 	defaultPaymentMethodStars    = "telegram_stars"
 	defaultNoPaymentMethodsText  = "Сейчас оплату провести не получится. Попробуйте позже."
 	defaultPaymentTimeoutText    = "Не дождались подтверждения оплаты. Попробуйте ещё раз."
 	defaultPreCheckoutCancelText = "Не удалось подтвердить оплату. Попробуйте позже."
+	mirrorPaymentOnlyMainBotText = "Оплата производится только через основной аккаунт: @MajorFanOfInnokentii_bot"
 )
 
 var availablePaymentMethods = []PaymentMethod{
@@ -35,6 +37,11 @@ func calculatePrice(paymentType PaymentType, opts *PaymentOpts) (int, *e.ErrorIn
 			return 0, e.NewError("levels must be positive", "failed to calculate payment price").WithSeverity(e.Notice)
 		}
 		return opts.LevelUp.Levels * levelUpPriceStars, e.Nil()
+	case PaymentTypeMirror:
+		if opts == nil || opts.Mirror == nil || opts.Mirror.PendingMirrorID <= 0 {
+			return 0, e.NewError("mirror opts are required", "failed to calculate payment price").WithSeverity(e.Notice)
+		}
+		return mirrorPriceStars, e.Nil()
 	default:
 		return 0, e.NewError("unsupported payment type", "failed to calculate payment price").WithSeverity(e.Notice)
 	}

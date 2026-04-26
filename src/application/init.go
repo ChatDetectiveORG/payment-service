@@ -116,7 +116,8 @@ func handleDelivery(delivery amqp.Delivery) *e.ErrorInfo {
 		update.PreCheckoutQuery.ID,
 		update.PreCheckoutQuery.Payload,
 	)
-	return endpoints.HandlePreCheckout(update)
+	mirrorID, _ := delivery.Headers["mirror_id"].(string)
+	return endpoints.HandlePreCheckout(update, mirrorID)
 }
 
 func handleErrors(src chan *e.ErrorInfo, ctx context.Context, wg *sync.WaitGroup) {

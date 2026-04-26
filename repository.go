@@ -10,8 +10,10 @@ import (
 )
 
 type paymentServiceMetadata struct {
-	ChatID  int64        `json:"chat_id,omitempty"`
+	ChatID int64 `json:"chat_id,omitempty"`
+
 	LevelUp *LevelUpOpts `json:"level_up,omitempty"`
+	Mirror  *MirrorOpts  `json:"mirror,omitempty"`
 }
 
 func getClientByTelegramID(tgUserID int64) (*models.Telegramuser, *e.ErrorInfo) {
@@ -60,6 +62,8 @@ func marshalPaymentMetadata(paymentType PaymentType, opts *PaymentOpts) (string,
 	switch paymentType {
 	case PaymentTypeLevelUp:
 		metadata.LevelUp = opts.LevelUp
+	case PaymentTypeMirror:
+		metadata.Mirror = opts.Mirror
 	default:
 		return "", e.Nil()
 	}
@@ -112,6 +116,21 @@ func parsePaymentMetadata(payment *models.Payment) (*paymentServiceMetadata, *e.
 	}
 	if err := json.Unmarshal([]byte(payment.ServiceMetadata), metadata); err != nil {
 		return nil, e.FromError(err, "failed to unmarshal payment metadata").WithSeverity(e.Notice)
+	}
+	return metadata, e.Nil()
+}
+
+func grantMirrorPurchase(payment *models.Payment, now time.Time) (*paymentServiceMetadata, *e.ErrorInfo) {
+	metadata, err := parsePaymentMetadata(payment)
+	if e.IsNonNil(err) {
+		return nil, err
+	}
+	if metadata.Mirror == nil || metadata.Mirror.PendingMirrorID <= 0 {
+		return nil, e.NewError("mirror metadata is invalid", "failed to grant mirror purchase").WithSeverity(e.Notice)
+	}
+
+	if _, err := models.ActivateMirror(GetDB(), metadata.Mirror.PendingMirrorID, &payment.ID, now); e.IsNonNil(err) {
+		return nil, err
 	}
 	return metadata, e.Nil()
 }
