@@ -34,12 +34,12 @@ func main() {
 	defer stop()
 
 	wg := &sync.WaitGroup{}
+	log.Println("Service started. Listening to payment queues...")
 	err = application.ListenToRabbitmq(cfg, ctx, wg)
 	if !err.IsNil() {
 		log.Fatal(err.JSON())
 	}
 
-	log.Println("Service started. Waiting for shutdown signal...")
 	<-ctx.Done()
 	log.Println("Shutdown signal received. Exiting...")
 

@@ -107,8 +107,15 @@ func handleDelivery(delivery amqp.Delivery) *e.ErrorInfo {
 		return e.FromError(err, "unmarshal update").WithSeverity(e.Critical)
 	}
 	if update.PreCheckoutQuery == nil {
+		log.Printf("trace=%s ignored non-precheckout shipping update", delivery.CorrelationId)
 		return e.Nil()
 	}
+	log.Printf(
+		"trace=%s received precheckout id=%s payload=%s",
+		delivery.CorrelationId,
+		update.PreCheckoutQuery.ID,
+		update.PreCheckoutQuery.Payload,
+	)
 	return endpoints.HandlePreCheckout(update)
 }
 

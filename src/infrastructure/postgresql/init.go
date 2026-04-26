@@ -34,6 +34,7 @@ func InitPostgresql() *e.ErrorInfo {
 	requiredModels := []interface{}{
 		(*models.Telegramuser)(nil),
 		(*models.Payment)(nil),
+		(*models.UserLevels)(nil),
 	}
 
 	for _, model := range requiredModels {

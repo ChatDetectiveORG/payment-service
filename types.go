@@ -31,11 +31,11 @@ type PaymentInvoiceOpts struct {
 }
 
 type LevelUpOpts struct {
-	Levels int
+	Levels int `json:"levels"`
 }
 
 type ExportChatOpts struct {
-	Messages int
+	Messages int `json:"messages"`
 }
 
 type PaymentMethod struct {

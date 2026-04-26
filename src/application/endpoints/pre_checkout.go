@@ -37,6 +37,5 @@ func HandlePreCheckout(update tele.Update) *e.ErrorInfo {
 	if query == nil {
 		return e.NewError("precheckout query is nil", "failed to handle precheckout").WithSeverity(e.Notice)
 	}
-	_, err := paymentservice.MarkPreCheckoutReceived(query.Payload, query.ID)
-	return err
+	return paymentservice.ProcessPreCheckout(query.Payload, query.ID)
 }

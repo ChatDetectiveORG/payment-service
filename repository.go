@@ -1,12 +1,18 @@
 package paymentservice
 
 import (
+	"encoding/json"
 	"time"
 
 	e "github.com/ChatDetectiveORG/shared/errors"
 	models "github.com/ChatDetectiveORG/shared/postgresModels"
 	"github.com/go-pg/pg/v10"
 )
+
+type paymentServiceMetadata struct {
+	ChatID  int64        `json:"chat_id,omitempty"`
+	LevelUp *LevelUpOpts `json:"level_up,omitempty"`
+}
 
 func getClientByTelegramID(tgUserID int64) (*models.Telegramuser, *e.ErrorInfo) {
 	user := &models.Telegramuser{}
@@ -16,7 +22,12 @@ func getClientByTelegramID(tgUserID int64) (*models.Telegramuser, *e.ErrorInfo) 
 	return user, e.Nil()
 }
 
-func createInvoicePayment(user *models.Telegramuser, paymentType PaymentType, payload string, amount int, method PaymentMethod, invoice *PaymentInvoiceOpts) (*models.Payment, *e.ErrorInfo) {
+func createInvoicePayment(user *models.Telegramuser, paymentType PaymentType, payload string, amount int, method PaymentMethod, opts *PaymentOpts) (*models.Payment, *e.ErrorInfo) {
+	metadata, err := marshalPaymentMetadata(paymentType, opts)
+	if e.IsNonNil(err) {
+		return nil, err
+	}
+
 	now := time.Now()
 	payment := &models.Payment{
 		ClientID:           user.ID,
@@ -29,15 +40,35 @@ func createInvoicePayment(user *models.Telegramuser, paymentType PaymentType, pa
 		Currency:           method.Currency,
 		Amount:             amount,
 		PaymentMethod:      method.Code,
-		InvoiceTitle:       invoice.Title,
-		InvoiceDescription: invoice.Description,
-		PriceLabel:         invoice.PriceLabel,
+		InvoiceTitle:       opts.Invoice.Title,
+		InvoiceDescription: opts.Invoice.Description,
+		PriceLabel:         opts.Invoice.PriceLabel,
+		ServiceMetadata:    metadata,
 		Status:             models.PaymentStatusInvoiceSent,
 	}
 	if _, err := GetDB().Model(payment).Insert(); err != nil {
 		return nil, e.FromError(err, "failed to create payment").WithSeverity(e.Notice)
 	}
 	return payment, e.Nil()
+}
+
+func marshalPaymentMetadata(paymentType PaymentType, opts *PaymentOpts) (string, *e.ErrorInfo) {
+	metadata := paymentServiceMetadata{}
+	if opts != nil && opts.Recipient != nil {
+		metadata.ChatID = opts.Recipient.ChatID
+	}
+	switch paymentType {
+	case PaymentTypeLevelUp:
+		metadata.LevelUp = opts.LevelUp
+	default:
+		return "", e.Nil()
+	}
+
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return "", e.FromError(err, "failed to marshal payment metadata").WithSeverity(e.Notice)
+	}
+	return string(raw), e.Nil()
 }
 
 func getPaymentByID(paymentID int) (*models.Payment, *e.ErrorInfo) {
@@ -72,6 +103,40 @@ func markPreCheckoutReceived(payload string, preCheckoutID string) (*models.Paym
 
 func MarkPreCheckoutReceived(payload string, preCheckoutID string) (*models.Payment, *e.ErrorInfo) {
 	return markPreCheckoutReceived(payload, preCheckoutID)
+}
+
+func parsePaymentMetadata(payment *models.Payment) (*paymentServiceMetadata, *e.ErrorInfo) {
+	metadata := &paymentServiceMetadata{}
+	if payment.ServiceMetadata == "" {
+		return metadata, e.Nil()
+	}
+	if err := json.Unmarshal([]byte(payment.ServiceMetadata), metadata); err != nil {
+		return nil, e.FromError(err, "failed to unmarshal payment metadata").WithSeverity(e.Notice)
+	}
+	return metadata, e.Nil()
+}
+
+func grantLevelPurchase(payment *models.Payment, now time.Time) (*paymentServiceMetadata, *e.ErrorInfo) {
+	metadata, err := parsePaymentMetadata(payment)
+	if e.IsNonNil(err) {
+		return nil, err
+	}
+	if metadata.LevelUp == nil || metadata.LevelUp.Levels <= 0 {
+		return nil, e.NewError("levelUp metadata is invalid", "failed to grant level purchase").WithSeverity(e.Notice)
+	}
+
+	level := &models.UserLevels{
+		LinkedUserID:    payment.ClientID,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		Level:           metadata.LevelUp.Levels,
+		UntilTimestamp:  now.AddDate(0, 1, 0).Unix(),
+		SourcePaymentID: &payment.ID,
+	}
+	if _, rawErr := GetDB().Model(level).OnConflict("(source_payment_id) DO NOTHING").Insert(); rawErr != nil {
+		return nil, e.FromError(rawErr, "failed to grant user levels").WithSeverity(e.Notice)
+	}
+	return metadata, e.Nil()
 }
 
 func markPaymentTimedOut(paymentID int) *e.ErrorInfo {

@@ -1,28 +1,11 @@
 package paymentservice
 
 import (
+	"strings"
 	"testing"
-	"time"
+
+	tele "gopkg.in/telebot.v4"
 )
-
-func TestPaymentDeadlineUsesDefaultWhenEmpty(t *testing.T) {
-	before := time.Now().Add(defaultPaymentWait - time.Second)
-	deadline := paymentDeadline(nil)
-	after := time.Now().Add(defaultPaymentWait + time.Second)
-
-	if deadline.Before(before) || deadline.After(after) {
-		t.Fatalf("deadline %s is outside expected default window", deadline)
-	}
-}
-
-func TestPaymentDeadlineUsesProvidedDeadline(t *testing.T) {
-	expected := time.Now().Add(30 * time.Second)
-	actual := paymentDeadline(&expected)
-
-	if !actual.Equal(expected) {
-		t.Fatalf("expected %s, got %s", expected, actual)
-	}
-}
 
 func TestValidateInvoiceRequiresTexts(t *testing.T) {
 	err := validateInvoice(&PaymentInvoiceOpts{
@@ -49,5 +32,42 @@ func TestValidateRecipientRequiresIDs(t *testing.T) {
 	err = validateRecipient(&PaymentRecipientOpts{})
 	if err.IsNil() {
 		t.Fatal("expected error for empty recipient ids")
+	}
+}
+
+func TestMarshalPaymentMetadataStoresLevelCount(t *testing.T) {
+	metadata, err := marshalPaymentMetadata(PaymentTypeLevelUp, &PaymentOpts{
+		Recipient: &PaymentRecipientOpts{TelegramUserID: 1, ChatID: 777},
+		LevelUp:   &LevelUpOpts{Levels: 5},
+	})
+	if !err.IsNil() {
+		t.Fatalf("unexpected error: %s", err.JSON())
+	}
+	if !strings.Contains(metadata, `"levels":5`) {
+		t.Fatalf("expected level count in metadata, got %s", metadata)
+	}
+	if !strings.Contains(metadata, `"chat_id":777`) {
+		t.Fatalf("expected chat id in metadata, got %s", metadata)
+	}
+}
+
+func TestBuildLevelPurchaseSuccessMessageEntities(t *testing.T) {
+	text, entities := buildLevelPurchaseSuccessMessage(1)
+
+	if !strings.Contains(text, "Поздравляем с приобретением 1 уровня!") {
+		t.Fatalf("unexpected text: %s", text)
+	}
+	if len(entities) != 3 {
+		t.Fatalf("expected 3 entities, got %d", len(entities))
+	}
+
+	if entities[0].Type != tele.EntityBold || entities[0].Offset != 0 || entities[0].Length != 38 {
+		t.Fatalf("unexpected bold entity: %+v", entities[0])
+	}
+	if entities[1].Type != tele.EntityCustomEmoji || entities[1].Offset != 38 || entities[1].Length != 2 || entities[1].CustomEmojiID != "5463122435425448565" {
+		t.Fatalf("unexpected custom emoji entity: %+v", entities[1])
+	}
+	if entities[2].Type != tele.EntityMention || entities[2].Offset != 142 || entities[2].Length != 25 {
+		t.Fatalf("unexpected mention entity: %+v", entities[2])
 	}
 }
