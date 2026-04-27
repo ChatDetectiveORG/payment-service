@@ -12,7 +12,6 @@ const (
 	mirrorPriceStars             = 1
 	defaultPaymentMethodStars    = "telegram_stars"
 	defaultNoPaymentMethodsText  = "Сейчас оплату провести не получится. Попробуйте позже."
-	defaultPaymentTimeoutText    = "Не дождались подтверждения оплаты. Попробуйте ещё раз."
 	defaultPreCheckoutCancelText = "Не удалось подтвердить оплату. Попробуйте позже."
 	mirrorPaymentOnlyMainBotText = "Оплата производится только через основной аккаунт: @MajorFanOfInnokentii_bot"
 )
@@ -25,6 +24,15 @@ var availablePaymentMethods = []PaymentMethod{
 		ProviderToken: "",
 		StarsRate:     1,
 	},
+}
+
+func GetCurrencyName(currency string) string {
+	switch currency {
+	case tele.Stars:
+		return "Звёзд"
+	default:
+		return currency
+	}
 }
 
 func calculatePrice(paymentType PaymentType, opts *PaymentOpts) (int, *e.ErrorInfo) {
