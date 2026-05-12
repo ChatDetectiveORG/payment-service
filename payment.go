@@ -113,6 +113,12 @@ func ProcessPreCheckout(payload string, preCheckoutID string, mirrorID string) *
 			_ = CancelPreCheckout(payment.ID, defaultPreCheckoutCancelText)
 			return err
 		}
+	case PaymentTypeExportChat:
+		metadata, err = grantExportChatPurchase(payment)
+		if e.IsNonNil(err) {
+			_ = CancelPreCheckout(payment.ID, defaultPreCheckoutCancelText)
+			return err
+		}
 	default:
 		_ = CancelPreCheckout(payment.ID, defaultPreCheckoutCancelText)
 		return e.NewError("unsupported payment type", "failed to process precheckout").WithSeverity(e.Notice)

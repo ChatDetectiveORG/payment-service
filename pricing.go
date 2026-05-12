@@ -1,6 +1,7 @@
 package paymentservice
 
 import (
+	"log"
 	"math"
 
 	e "github.com/ChatDetectiveORG/shared/errors"
@@ -10,6 +11,7 @@ import (
 const (
 	levelUpPriceStars            = 1
 	mirrorPriceStars             = 1
+	exportChatStarsPerMessage    = 1
 	defaultPaymentMethodStars    = "telegram_stars"
 	defaultNoPaymentMethodsText  = "Сейчас оплату провести не получится. Попробуйте позже."
 	defaultPreCheckoutCancelText = "Не удалось подтвердить оплату. Попробуйте позже."
@@ -50,6 +52,22 @@ func calculatePrice(paymentType PaymentType, opts *PaymentOpts) (int, *e.ErrorIn
 			return 0, e.NewError("mirror opts are required", "failed to calculate payment price").WithSeverity(e.Notice)
 		}
 		return mirrorPriceStars, e.Nil()
+	case PaymentTypeExportChat:
+		if opts == nil || opts.ExportChat == nil {
+			return 0, e.NewError("exportChat opts are required", "failed to calculate payment price").WithSeverity(e.Notice)
+		}
+		if opts.ExportChat.Messages <= 0 {
+			return 0, e.NewError("messages must be positive", "failed to calculate payment price").WithSeverity(e.Notice)
+		}
+		if opts.ExportChat.InterlocutorCode == "" {
+			return 0, e.NewError("interlocutor code is required", "failed to calculate payment price").WithSeverity(e.Notice)
+		}
+		if opts.ExportChat.SenderIDHash == "" {
+			return 0, e.NewError("sender id hash is required", "failed to calculate payment price").WithSeverity(e.Notice)
+		}
+		log.Println("real costs:", opts.ExportChat.Messages * exportChatStarsPerMessage)
+		return 1, e.Nil() // For testing
+		// return opts.ExportChat.Messages * exportChatStarsPerMessage, e.Nil()
 	default:
 		return 0, e.NewError("unsupported payment type", "failed to calculate payment price").WithSeverity(e.Notice)
 	}

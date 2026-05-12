@@ -12,13 +12,35 @@ func TestCalculateLevelUpPrice(t *testing.T) {
 	}
 }
 
-func TestCalculateExportChatIsNotEnabledYet(t *testing.T) {
-	price, err := calculatePrice(PaymentTypeExportChat, &PaymentOpts{ExportChat: &ExportChatOpts{Messages: 6}})
-	if err.IsNil() {
-		t.Fatal("expected export chat to be unsupported")
+func TestCalculateExportChatPrice(t *testing.T) {
+	price, err := calculatePrice(PaymentTypeExportChat, &PaymentOpts{ExportChat: &ExportChatOpts{
+		Messages:         6,
+		InterlocutorCode: "abcdefgh",
+		SenderIDHash:     "deadbeef",
+	}})
+	if !err.IsNil() {
+		t.Fatalf("unexpected error: %s", err.JSON())
 	}
-	if price != 0 {
-		t.Fatalf("expected zero price for unsupported payment, got %d", price)
+	if price != 6 {
+		t.Fatalf("expected 6 stars (1⭐ per message), got %d", price)
+	}
+}
+
+func TestCalculateExportChatRejectsZeroMessages(t *testing.T) {
+	_, err := calculatePrice(PaymentTypeExportChat, &PaymentOpts{ExportChat: &ExportChatOpts{
+		Messages:         0,
+		InterlocutorCode: "abcdefgh",
+		SenderIDHash:     "deadbeef",
+	}})
+	if err.IsNil() {
+		t.Fatal("expected error for zero messages")
+	}
+}
+
+func TestCalculateExportChatRejectsMissingMetadata(t *testing.T) {
+	_, err := calculatePrice(PaymentTypeExportChat, &PaymentOpts{ExportChat: &ExportChatOpts{Messages: 5}})
+	if err.IsNil() {
+		t.Fatal("expected error when interlocutor or sender hash is missing")
 	}
 }
 

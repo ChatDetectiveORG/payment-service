@@ -38,7 +38,10 @@ type LevelUpOpts struct {
 }
 
 type ExportChatOpts struct {
-	Messages int `json:"messages"`
+	Messages         int    `json:"messages"`
+	InterlocutorCode string `json:"interlocutor_code"`
+	SenderIDHash     string `json:"sender_id_hash"`
+	StatusChatID     int64  `json:"status_chat_id"`
 }
 
 type MirrorOpts struct {

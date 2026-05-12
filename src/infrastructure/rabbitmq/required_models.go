@@ -22,6 +22,15 @@ func buildRequiredModels() []Model {
 			NoWait:     false,
 			Args:       amqp.Table{},
 		},
+		ExchangeModel{
+			Exchange:   "chatdetective.exports",
+			Kind:       "topic",
+			Durable:    true,
+			AutoDelete: false,
+			Internal:   false,
+			NoWait:     false,
+			Args:       amqp.Table{},
+		},
 	}
 
 	for i := 0; i < shardCount; i++ {

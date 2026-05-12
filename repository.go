@@ -2,18 +2,23 @@ package paymentservice
 
 import (
 	"encoding/json"
+	"log"
 	"time"
 
 	e "github.com/ChatDetectiveORG/shared/errors"
+	"github.com/ChatDetectiveORG/shared/exports"
 	models "github.com/ChatDetectiveORG/shared/postgresModels"
-	"github.com/go-pg/pg/v10"
+
+	redis "github.com/ChatDetectiveORG/messgae-sender/src/infrastructure/redis"
+	postgresql "github.com/ChatDetectiveORG/payment-service/src/infrastructure/postgresql"
 )
 
 type paymentServiceMetadata struct {
 	ChatID int64 `json:"chat_id,omitempty"`
 
-	LevelUp *LevelUpOpts `json:"level_up,omitempty"`
-	Mirror  *MirrorOpts  `json:"mirror,omitempty"`
+	LevelUp    *LevelUpOpts    `json:"level_up,omitempty"`
+	Mirror     *MirrorOpts     `json:"mirror,omitempty"`
+	ExportChat *ExportChatOpts `json:"export_chat,omitempty"`
 }
 
 func getClientByTelegramID(tgUserID int64) (*models.Telegramuser, *e.ErrorInfo) {
@@ -64,6 +69,8 @@ func marshalPaymentMetadata(paymentType PaymentType, opts *PaymentOpts) (string,
 		metadata.LevelUp = opts.LevelUp
 	case PaymentTypeMirror:
 		metadata.Mirror = opts.Mirror
+	case PaymentTypeExportChat:
+		metadata.ExportChat = opts.ExportChat
 	default:
 		return "", e.Nil()
 	}
@@ -135,6 +142,61 @@ func grantMirrorPurchase(payment *models.Payment, now time.Time) (*paymentServic
 	return metadata, e.Nil()
 }
 
+// grantExportChatPurchase publishes the paid export request to chat-export-service. We do this
+// BEFORE telegram-side approve in ProcessPreCheckout so that publish failures cancel the payment
+// and the user is not charged. Once published, RabbitMQ durability + chat-export-service ack-on-success
+// guarantees at-least-once delivery.
+func grantExportChatPurchase(payment *models.Payment) (*paymentServiceMetadata, *e.ErrorInfo) {
+	metadata, err := parsePaymentMetadata(payment)
+	if e.IsNonNil(err) {
+		return nil, err
+	}
+	if metadata.ExportChat == nil {
+		return nil, e.NewError("exportChat metadata is missing", "failed to grant export purchase").WithSeverity(e.Notice)
+	}
+	if metadata.ExportChat.Messages <= 0 {
+		return nil, e.NewError("exportChat metadata is invalid", "failed to grant export purchase").WithSeverity(e.Notice)
+	}
+
+	conn, err := redis.RedisConn()
+	if e.IsNonNil(err) {
+		return nil, e.NewError("cannot get redis connection", "failed to grant export purchase").WithSeverity(e.Notice)
+	}
+
+	db := postgresql.GetDB()
+
+	m, eRaw := json.Marshal(payment)
+	if e.IsNonNil(eRaw) {
+		return nil, e.NewError("cannot marshal payment", "failed to grant export purchase").WithSeverity(e.Notice)
+	}
+	log.Println("payment:", string(m))
+
+	eRaw = db.Model(payment).WherePK().Relation("Client").Select()
+	if e.IsNonNil(eRaw) {
+		log.Println("eRaw:", eRaw)
+		return nil, e.NewError("cannot get client", "failed to grant export purchase").WithSeverity(e.Notice)
+	}
+
+	if payment.Client == nil {
+		return nil, e.NewError("payment.client is nil", "failed to grant export purchase").WithSeverity(e.Notice)
+	}
+
+	acquired, err := exports.AcquireExportLock(payment.Client.IDHash, conn)
+	if e.IsNonNil(err) {
+		return nil, err.PushStack()
+	}
+	// ToDo: Cообщать пользователю, почему оплата не прошла
+	if !acquired {
+		payment.UserSideError = "У тебя уже идёт экспорт, дождись его завершения."
+		return nil, e.NewError("export lock is already acquired", "failed to grant export purchase").WithSeverity(e.Notice)
+	}
+
+	if err := publishExportRequest(payment, metadata); e.IsNonNil(err) {
+		return nil, err
+	}
+	return metadata, e.Nil()
+}
+
 func grantLevelPurchase(payment *models.Payment, now time.Time) (*paymentServiceMetadata, *e.ErrorInfo) {
 	metadata, err := parsePaymentMetadata(payment)
 	if e.IsNonNil(err) {
@@ -156,15 +218,6 @@ func grantLevelPurchase(payment *models.Payment, now time.Time) (*paymentService
 		return nil, e.FromError(rawErr, "failed to grant user levels").WithSeverity(e.Notice)
 	}
 	return metadata, e.Nil()
-}
-
-func markPaymentTimedOut(paymentID int) *e.ErrorInfo {
-	payment := &models.Payment{ID: paymentID, Status: models.PaymentStatusTimedOut, UpdatedAt: time.Now()}
-	_, err := GetDB().Model(payment).WherePK().Column("status", "updated_at").Update()
-	if err != nil && err != pg.ErrNoRows {
-		return e.FromError(err, "failed to mark payment timed out").WithSeverity(e.Notice)
-	}
-	return e.Nil()
 }
 
 func markPaymentApproved(payment *models.Payment) *e.ErrorInfo {
