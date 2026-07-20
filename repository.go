@@ -10,7 +10,7 @@ import (
 	"github.com/ChatDetectiveORG/shared/exports"
 	models "github.com/ChatDetectiveORG/shared/postgresModels"
 
-	redis "github.com/ChatDetectiveORG/messgae-sender/src/infrastructure/redis"
+	redis "github.com/ChatDetectiveORG/payment-service/src/infrastructure/redis"
 	postgresql "github.com/ChatDetectiveORG/payment-service/src/infrastructure/postgresql"
 )
 

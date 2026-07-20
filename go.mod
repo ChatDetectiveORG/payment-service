@@ -5,6 +5,7 @@ go 1.23.3
 require (
 	github.com/ChatDetectiveORG/shared v0.1.30
 	github.com/go-pg/pg/v10 v10.15.0
+	github.com/gomodule/redigo v1.9.3
 	github.com/google/uuid v1.6.0
 	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/spf13/viper v1.21.0

@@ -3,7 +3,7 @@ package redis
 import (
 	"sync"
 
-	"github.com/ChatDetectiveORG/messgae-sender/src/infrastructure/config"
+	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/config"
 
 	e "github.com/ChatDetectiveORG/shared/errors"
 

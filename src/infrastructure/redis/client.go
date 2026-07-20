@@ -3,7 +3,7 @@ package redis
 import (
 	"time"
 
-	"github.com/ChatDetectiveORG/messgae-sender/src/infrastructure/config"
+	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/config"
 
 	"github.com/gomodule/redigo/redis"
 
