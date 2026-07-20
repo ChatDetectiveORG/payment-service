@@ -4,8 +4,27 @@ import (
 	"strings"
 	"testing"
 
+	models "github.com/ChatDetectiveORG/shared/postgresModels"
 	tele "gopkg.in/telebot.v4"
 )
+
+func TestPreCheckoutActionForStatusIsIdempotent(t *testing.T) {
+	cases := []struct {
+		status string
+		want   preCheckoutAction
+	}{
+		{models.PaymentStatusInvoiceSent, preCheckoutActionGrant},
+		{models.PaymentStatusPreCheckoutReceived, preCheckoutActionGrant},
+		{models.PaymentStatusApproved, preCheckoutActionReApprove},
+		{models.PaymentStatusCancelled, preCheckoutActionReCancel},
+		{models.PaymentStatusTimedOut, preCheckoutActionReCancel},
+	}
+	for _, c := range cases {
+		if got := preCheckoutActionForStatus(c.status); got != c.want {
+			t.Fatalf("status %q: expected action %d, got %d", c.status, c.want, got)
+		}
+	}
+}
 
 func TestValidateInvoiceRequiresTexts(t *testing.T) {
 	err := validateInvoice(&PaymentInvoiceOpts{

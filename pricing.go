@@ -1,22 +1,24 @@
 package paymentservice
 
 import (
-	"log"
 	"math"
 
+	constants "github.com/ChatDetectiveORG/shared/constants"
 	e "github.com/ChatDetectiveORG/shared/errors"
 	tele "gopkg.in/telebot.v4"
 )
 
+// MVP pricing: every purchase costs a flat 1 XTR.
 const (
 	levelUpPriceStars            = 1
 	mirrorPriceStars             = 1
-	exportChatStarsPerMessage    = 1
+	exportChatPriceStars         = 1
 	defaultPaymentMethodStars    = "telegram_stars"
 	defaultNoPaymentMethodsText  = "Сейчас оплату провести не получится. Попробуйте позже."
 	defaultPreCheckoutCancelText = "Не удалось подтвердить оплату. Попробуйте позже."
-	mirrorPaymentOnlyMainBotText = "Оплата производится только через основной аккаунт: @MajorFanOfInnokentii_bot"
 )
+
+var mirrorPaymentOnlyMainBotText = "Оплата производится только через основной аккаунт: " + constants.BotUsername
 
 var availablePaymentMethods = []PaymentMethod{
 	{
@@ -46,7 +48,7 @@ func calculatePrice(paymentType PaymentType, opts *PaymentOpts) (int, *e.ErrorIn
 		if opts.LevelUp.Levels <= 0 {
 			return 0, e.NewError("levels must be positive", "failed to calculate payment price").WithSeverity(e.Notice)
 		}
-		return opts.LevelUp.Levels * levelUpPriceStars, e.Nil()
+		return levelUpPriceStars, e.Nil()
 	case PaymentTypeMirror:
 		if opts == nil || opts.Mirror == nil || opts.Mirror.PendingMirrorID <= 0 {
 			return 0, e.NewError("mirror opts are required", "failed to calculate payment price").WithSeverity(e.Notice)
@@ -65,9 +67,7 @@ func calculatePrice(paymentType PaymentType, opts *PaymentOpts) (int, *e.ErrorIn
 		if opts.ExportChat.SenderIDHash == "" {
 			return 0, e.NewError("sender id hash is required", "failed to calculate payment price").WithSeverity(e.Notice)
 		}
-		log.Println("real costs:", opts.ExportChat.Messages * exportChatStarsPerMessage)
-		return 1, e.Nil() // For testing
-		// return opts.ExportChat.Messages * exportChatStarsPerMessage, e.Nil()
+		return exportChatPriceStars, e.Nil()
 	default:
 		return 0, e.NewError("unsupported payment type", "failed to calculate payment price").WithSeverity(e.Notice)
 	}

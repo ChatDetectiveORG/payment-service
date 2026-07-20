@@ -2,17 +2,17 @@ package paymentservice
 
 import "testing"
 
-func TestCalculateLevelUpPrice(t *testing.T) {
+func TestCalculateLevelUpPriceIsFlatMVPPrice(t *testing.T) {
 	price, err := calculatePrice(PaymentTypeLevelUp, &PaymentOpts{LevelUp: &LevelUpOpts{Levels: 3}})
 	if !err.IsNil() {
 		t.Fatalf("unexpected error: %s", err.JSON())
 	}
-	if price != 3 {
-		t.Fatalf("expected 3 stars, got %d", price)
+	if price != 1 {
+		t.Fatalf("expected flat 1 star (MVP pricing), got %d", price)
 	}
 }
 
-func TestCalculateExportChatPrice(t *testing.T) {
+func TestCalculateExportChatPriceIsFlatMVPPrice(t *testing.T) {
 	price, err := calculatePrice(PaymentTypeExportChat, &PaymentOpts{ExportChat: &ExportChatOpts{
 		Messages:         6,
 		InterlocutorCode: "abcdefgh",
@@ -21,8 +21,8 @@ func TestCalculateExportChatPrice(t *testing.T) {
 	if !err.IsNil() {
 		t.Fatalf("unexpected error: %s", err.JSON())
 	}
-	if price != 6 {
-		t.Fatalf("expected 6 stars (1⭐ per message), got %d", price)
+	if price != 1 {
+		t.Fatalf("expected flat 1 star (MVP pricing), got %d", price)
 	}
 }
 

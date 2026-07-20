@@ -12,12 +12,16 @@ import (
 	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/config"
 	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/postgresql"
 	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/rabbitmq"
+	utils "github.com/ChatDetectiveORG/shared/utils"
 )
 
 func main() {
 	cfg, err := config.FetchConfig()
 	if !err.IsNil() {
 		log.Fatal(err.JSON())
+	}
+	if keyErr := utils.ValidateMasterKeyFromEnv(); !keyErr.IsNil() {
+		log.Fatal(keyErr.JSON())
 	}
 
 	err = rabbitmq.InitRabbitMQ(cfg, rabbitmq.RequiredModels)

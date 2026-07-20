@@ -7,14 +7,16 @@ import (
 	"strings"
 	"time"
 
+	constants "github.com/ChatDetectiveORG/shared/constants"
 	e "github.com/ChatDetectiveORG/shared/errors"
 	models "github.com/ChatDetectiveORG/shared/postgresModels"
+	sharedTelegram "github.com/ChatDetectiveORG/shared/telegram"
 	utils "github.com/ChatDetectiveORG/shared/utils"
 	"github.com/google/uuid"
 	tele "gopkg.in/telebot.v4"
 )
 
-const levelPurchaseBotMention = "@MajorFanOfInnokentii_bot"
+var levelPurchaseBotMention = constants.BotUsername
 
 func EmitPayment(paymentType *PaymentType, opts *PaymentOpts) (*e.ErrorInfo, int) {
 	if paymentType == nil {
@@ -88,8 +90,64 @@ func approvePreCheckout(paymentID int, mirrorID string) *e.ErrorInfo {
 	return markPaymentApproved(payment)
 }
 
+type preCheckoutAction int
+
+const (
+	preCheckoutActionGrant preCheckoutAction = iota
+	preCheckoutActionReApprove
+	preCheckoutActionReCancel
+)
+
+// preCheckoutActionForStatus decides how to handle a (possibly duplicate) pre-checkout
+// delivery based on the payment's current status. Telegram retries pre_checkout_query
+// updates, so already-finalized payments must be acknowledged without granting again.
+func preCheckoutActionForStatus(status string) preCheckoutAction {
+	switch status {
+	case models.PaymentStatusApproved:
+		return preCheckoutActionReApprove
+	case models.PaymentStatusCancelled, models.PaymentStatusTimedOut:
+		return preCheckoutActionReCancel
+	default:
+		return preCheckoutActionGrant
+	}
+}
+
+func acknowledgePreCheckout(preCheckoutID string, mirrorID string, userSideError string) *e.ErrorInfo {
+	bot, err := GetBotByMirrorID(mirrorID)
+	if e.IsNonNil(err) {
+		return err
+	}
+	var rawErr error
+	if userSideError == "" {
+		rawErr = bot.Accept(&tele.PreCheckoutQuery{ID: preCheckoutID})
+	} else {
+		rawErr = bot.Accept(&tele.PreCheckoutQuery{ID: preCheckoutID}, userSideError)
+	}
+	if rawErr != nil {
+		return e.FromError(rawErr, "failed to acknowledge duplicate precheckout").WithSeverity(e.Notice)
+	}
+	return e.Nil()
+}
+
 func ProcessPreCheckout(payload string, preCheckoutID string, mirrorID string) *e.ErrorInfo {
 	log.Printf("processing precheckout payload=%s id=%s", payload, preCheckoutID)
+	existing, err := getPaymentByPayload(payload)
+	if e.IsNonNil(err) {
+		return err
+	}
+	switch preCheckoutActionForStatus(existing.Status) {
+	case preCheckoutActionReApprove:
+		log.Printf("duplicate precheckout for approved payment_id=%d; acknowledging without re-grant", existing.ID)
+		return acknowledgePreCheckout(preCheckoutID, mirrorID, "")
+	case preCheckoutActionReCancel:
+		reason := existing.UserSideError
+		if reason == "" {
+			reason = defaultPreCheckoutCancelText
+		}
+		log.Printf("duplicate precheckout for finalized payment_id=%d; cancelling again", existing.ID)
+		return acknowledgePreCheckout(preCheckoutID, mirrorID, reason)
+	}
+
 	payment, err := markPreCheckoutReceived(payload, preCheckoutID)
 	if e.IsNonNil(err) {
 		return err
@@ -332,6 +390,7 @@ func setMirrorWebhook(bot *tele.Bot, unique string) *e.ErrorInfo {
 	if err := bot.SetWebhook(&tele.Webhook{
 		Endpoint:       &tele.WebhookEndpoint{PublicURL: buildMirrorWebhookURL(unique)},
 		MaxConnections: 100,
+		SecretToken:    sharedTelegram.WebhookSecret(),
 		AllowedUpdates: []string{
 			"message",
 			"callback_query",

@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	constants "github.com/ChatDetectiveORG/shared/constants"
 	e "github.com/ChatDetectiveORG/shared/errors"
 	"github.com/ChatDetectiveORG/shared/exports"
 	models "github.com/ChatDetectiveORG/shared/postgresModels"
@@ -211,7 +212,7 @@ func grantLevelPurchase(payment *models.Payment, now time.Time) (*paymentService
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		Level:           metadata.LevelUp.Levels,
-		UntilTimestamp:  now.AddDate(0, 1, 0).Unix(),
+		UntilTimestamp:  now.AddDate(0, 0, constants.PurchasedLevelDurationDays).Unix(),
 		SourcePaymentID: &payment.ID,
 	}
 	if _, rawErr := GetDB().Model(level).OnConflict("(source_payment_id) DO NOTHING").Insert(); rawErr != nil {
