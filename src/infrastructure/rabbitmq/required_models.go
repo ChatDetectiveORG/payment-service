@@ -1,20 +1,19 @@
 package rabbitmq
 
 import (
-	"fmt"
-
 	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/config"
+	"github.com/ChatDetectiveORG/shared/events"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 var RequiredModels = buildRequiredModels()
 
-const shardCount = 64
+const shardCount = events.ShardCount
 
 func buildRequiredModels() []Model {
 	models := []Model{
 		ExchangeModel{
-			Exchange:   "chatdetective.events",
+			Exchange:   events.EventsExchange,
 			Kind:       "topic",
 			Durable:    true,
 			AutoDelete: false,
@@ -33,8 +32,8 @@ func buildRequiredModels() []Model {
 		},
 	}
 
-	for i := 0; i < shardCount; i++ {
-		queue := fmt.Sprintf("%s.q%02d", config.PodType, i)
+	for i := 0; i < events.ShardCount; i++ {
+		queue := events.ShardQueueName(config.PodType, i)
 		models = append(models,
 			QueueModel{
 				Queue:      queue,
@@ -48,7 +47,7 @@ func buildRequiredModels() []Model {
 			},
 			BindingModel{
 				Queue:      queue,
-				Exchange:   "chatdetective.events",
+				Exchange:   events.EventsExchange,
 				RoutingKey: queue,
 				NoWait:     false,
 				Args:       amqp.Table{},

@@ -13,13 +13,14 @@ import (
 	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/rabbitmq"
 	e "github.com/ChatDetectiveORG/shared/errors"
 	"github.com/ChatDetectiveORG/shared/amqputil"
+	"github.com/ChatDetectiveORG/shared/events"
 	amqp "github.com/rabbitmq/amqp091-go"
 	tele "gopkg.in/telebot.v4"
 )
 
 var errors = make(chan *e.ErrorInfo, 1000)
 
-const shardCount = 64
+const shardCount = events.ShardCount
 
 func ListenToRabbitmq(cfg *config.Config, ctx context.Context, wg *sync.WaitGroup) *e.ErrorInfo {
 	go handleErrors(errors, ctx, wg)
@@ -29,6 +30,9 @@ func ListenToRabbitmq(cfg *config.Config, ctx context.Context, wg *sync.WaitGrou
 		defer wg.Done()
 		amqputil.RunConsumerLoop(ctx, amqputil.ConsumerConfig{
 			Dial: func() (*amqputil.ConsumerSession, error) {
+				if ensureErr := rabbitmq.InitRabbitMQ(cfg, rabbitmq.RequiredModels); !ensureErr.IsNil() {
+					return nil, ensureErr
+				}
 				deliveries, tags, ch, dialErr := initRabbitmqQueue(cfg)
 				if !dialErr.IsNil() {
 					return nil, dialErr
@@ -43,6 +47,9 @@ func ListenToRabbitmq(cfg *config.Config, ctx context.Context, wg *sync.WaitGrou
 						_ = ch.Close()
 					},
 				}, nil
+			},
+			OnConnect: func(session *amqputil.ConsumerSession) {
+				log.Printf("payment-service: RabbitMQ consumer ready on %d %s shards", shardCount, config.PodType)
 			},
 			OnDelivery: func(delivery amqp.Delivery) {
 				if err := handleDelivery(delivery); !err.IsNil() {
@@ -143,5 +150,5 @@ func handleErrors(src chan *e.ErrorInfo, ctx context.Context, wg *sync.WaitGroup
 }
 
 func fmtShardQueue(i int) string {
-	return fmt.Sprintf("%s.q%02d", config.PodType, i)
+	return events.ShardQueueName(config.PodType, i)
 }
