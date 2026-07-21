@@ -12,6 +12,7 @@ import (
 	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/config"
 	"github.com/ChatDetectiveORG/payment-service/src/infrastructure/rabbitmq"
 	e "github.com/ChatDetectiveORG/shared/errors"
+	"github.com/ChatDetectiveORG/shared/amqputil"
 	amqp "github.com/rabbitmq/amqp091-go"
 	tele "gopkg.in/telebot.v4"
 )
@@ -21,37 +22,44 @@ var errors = make(chan *e.ErrorInfo, 1000)
 const shardCount = 64
 
 func ListenToRabbitmq(cfg *config.Config, ctx context.Context, wg *sync.WaitGroup) *e.ErrorInfo {
-	consumer, consumerTags, rabbitmqChannel, err := initRabbitmqQueue(cfg)
-	if !err.IsNil() {
-		return err
-	}
-	defer rabbitmqChannel.Close()
-
 	go handleErrors(errors, ctx, wg)
 
-	for {
-		select {
-		case <-ctx.Done():
-			for _, tag := range consumerTags {
-				_ = rabbitmqChannel.Cancel(tag, false)
-			}
-			return e.Nil()
-		case delivery, ok := <-consumer:
-			if !ok {
-				return e.FromError(nil, "RabbitMQ consumer channel closed").WithSeverity(e.Critical)
-			}
-			if err := handleDelivery(delivery); !err.IsNil() {
-				errors <- err.WithData(map[string]any{"rk": delivery.RoutingKey}).WithSeverity(e.Critical)
-				if nackErr := delivery.Nack(false, false); nackErr != nil {
-					errors <- e.FromError(nackErr, "failed to nack delivery").WithSeverity(e.Critical)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		amqputil.RunConsumerLoop(ctx, amqputil.ConsumerConfig{
+			Dial: func() (*amqputil.ConsumerSession, error) {
+				deliveries, tags, ch, dialErr := initRabbitmqQueue(cfg)
+				if !dialErr.IsNil() {
+					return nil, dialErr
 				}
-				continue
-			}
-			if ackErr := delivery.Ack(false); ackErr != nil {
-				errors <- e.FromError(ackErr, "failed to ack delivery")
-			}
-		}
-	}
+				return &amqputil.ConsumerSession{
+					Deliveries: deliveries,
+					Channel:    ch,
+					Cleanup: func() {
+						for _, tag := range tags {
+							_ = ch.Cancel(tag, false)
+						}
+						_ = ch.Close()
+					},
+				}, nil
+			},
+			OnDelivery: func(delivery amqp.Delivery) {
+				if err := handleDelivery(delivery); !err.IsNil() {
+					errors <- err.WithData(map[string]any{"rk": delivery.RoutingKey}).WithSeverity(e.Critical)
+					if nackErr := delivery.Nack(false, false); nackErr != nil {
+						errors <- e.FromError(nackErr, "failed to nack delivery").WithSeverity(e.Critical)
+					}
+					return
+				}
+				if ackErr := delivery.Ack(false); ackErr != nil {
+					errors <- e.FromError(ackErr, "failed to ack delivery")
+				}
+			},
+		})
+	}()
+
+	return e.Nil()
 }
 
 func initRabbitmqQueue(cfg *config.Config) (<-chan amqp.Delivery, []string, *amqp.Channel, *e.ErrorInfo) {
